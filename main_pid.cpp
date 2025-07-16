@@ -12,6 +12,12 @@ std::ifstream::pos_type filesize(std::ifstream& file)
     return size;
 }
 
+bool hasSuffix(std::string const& value, std::string const& ending)
+{
+    if (ending.size() > value.size()) return false;
+    return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
+}
+
 bool isHexBlock(const std::string& buff)
 {
     if (buff.size() != 32)
@@ -43,88 +49,99 @@ block hexToBlock(const std::string& buff)
 }
 
 
-std::vector<block> readSet(const std::string& path, FileType ft) {
+std::vector<block> readSet(const std::string& path) {
     std::vector<block> ret;
-    if (ft == FileType::Bin)
+    std::ifstream file(path, std::ios::in);
+    if (file.is_open() == false)
+        throw std::runtime_error("failed to open file: " + path);
+    std::string buffer;
+    while (std::getline(file, buffer))
     {
-        std::ifstream file(path, std::ios::binary | std::ios::in);
-        if (file.is_open() == false)
-            throw std::runtime_error("failed to open file: " + path);
-        auto size = filesize(file);
-        if (size % 16)
-            throw std::runtime_error("Bad file size. Expecting a binary file with 16 byte elements");
-
-        ret.resize(size / 16);
-        file.read((char*)ret.data(), size);
-    }
-    else if (ft == FileType::Csv)
-    {
-        std::ifstream file(path, std::ios::in);
-        if (file.is_open() == false)
-            throw std::runtime_error("failed to open file: " + path);
-        std::string buffer;
-        while (std::getline(file, buffer))
+        // if the input is already a 32 char hex 
+        // value, just parse it as is.
+        if (isHexBlock(buffer))
         {
-            // if the input is already a 32 char hex 
-            // value, just parse it as is.
-            if (isHexBlock(buffer))
-            {
-                ret.push_back(hexToBlock(buffer));
-            }
-            else
-            {
-                ret.push_back(Hash::StringToBlock(buffer));
-            }
+            ret.push_back(hexToBlock(buffer));
+        }
+        else
+        {
+            ret.push_back(Hash::StringToBlock(buffer));
         }
     }
-    else
+    return ret;
+}
+
+void padInput(std::vector<block>& input, size_t ITEM_LEN)
+{
+}
+
+void writeOutput(std::string outPath, const std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>>& output)
+{
+    std::ofstream file;
+
+    file.open(outPath, std::ios::out | std::ios::trunc);
+
+    if (file.is_open() == false)
+        throw std::runtime_error("failed to open the output file: " + outPath);
+
+    std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(output);
+    std::vector<std::vector<uint8_t>> vec_party_id = std::get<0>(output);
+
+    for (uint64_t i = 0; i < vec_party_id.size(); ++i)
     {
-        throw std::runtime_error("unknown file type");
+        file << *(block*)&vec_union_id[i][0] << "," << *(block*)&vec_party_id[i][0] << std::endl;
     }
 
-    return ret;
+    // If the union set is larger than the party set which is very probable, we write the rest of the union set without the party set.
+    for (uint64_t i = vec_party_id.size(); i < vec_union_id.size(); ++i)
+    {
+        file << *(block*)&vec_union_id[i][0] << "," << std::endl;
+    }
 }
 
 
 int main(int argc, char** argv)
 {
-    /* if (argc < 3)
+    if (argc != 2)
     {
-        std::cout << "Usage: " << argv[0] << " <set> [file_type]" << std::endl;
-        std::cout << "file_type: bin or csv (default: bin)" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <set_file>" << std::endl;
         return 1;
     }
 
-    FileType file_type = FileType::Bin;
-    if (argc == 4)
-    {
-        if (std::string(argv[3]) == "csv")
-            file_type = FileType::Csv;
-        else if (std::string(argv[3]) != "bin")
-            throw std::runtime_error("unknown file type");
-    } */
     CRYPTO_Initialize(); 
 
-    std::vector<block> input = readSet(argv[1], FileType::Csv);
+    std::vector<block> input = readSet(argv[1]);
 
     std::cout << "Private-ID begins >>>" << std::endl; 
 
     PrintSplitLine('-');  
-    std::cout << "generate or load public parameters and test case" << std::endl;
+    std::cout << "Loading public parameters if they exist" << std::endl;
 
     // generate pp (must be same for both server and client)
     std::string pp_filename = "PrivateID.pp"; 
-    mqRPMTPrivateID::PP pp; 
- 
-    if(!FileExist(pp_filename)){
-        std::cout << pp_filename << " does not exist" << std::endl;
+    mqRPMTPrivateID::PP pp;
+    std::cout << "Use file for public parameters if available? (y/n) ==> ";
+    std::string use_file_str;
+    std::getline(std::cin, use_file_str);
+
+    if(!FileExist(pp_filename) || use_file_str != "y"){
+        std::cout << pp_filename << " being created" << std::endl;
         size_t computational_security_parameter = 128;         
         size_t statistical_security_parameter = 40; 
-        size_t LOG_SENDER_ITEM_NUM = 7;
-        size_t LOG_RECEIVER_ITEM_NUM = 7;  
-        size_t LOG_PRF_INPUT_LEN = std::max(LOG_RECEIVER_ITEM_NUM, LOG_SENDER_ITEM_NUM); // set OPRF input length
-        pp = mqRPMTPrivateID::Setup(LOG_PRF_INPUT_LEN, computational_security_parameter, statistical_security_parameter, 
-                              LOG_SENDER_ITEM_NUM, LOG_RECEIVER_ITEM_NUM); 
+        size_t log_sender_item_num;
+        size_t log_receiver_item_num;
+        
+        std::cout << "Please input log_sender_item_num and log_receiver_item_num. Both must be >= 7 (e.g., 10 10) ==> ";
+        std::cin >> log_sender_item_num >> log_receiver_item_num;
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        if(log_sender_item_num < 7 || log_receiver_item_num < 7){
+            std::cerr << "log_sender_item_num and log_receiver_item_num must be >= 7" << std::endl; 
+            exit(1); 
+        }
+
+        size_t log_prf_input_len = std::max(log_receiver_item_num, log_sender_item_num); // set OPRF input length
+        pp = mqRPMTPrivateID::Setup(log_prf_input_len, computational_security_parameter, statistical_security_parameter, 
+                              log_sender_item_num, log_receiver_item_num); 
         mqRPMTPrivateID::SavePP(pp, pp_filename); 
     }
     else{
@@ -133,17 +150,26 @@ int main(int argc, char** argv)
     }
 
     std::string party;
-    std::cout << "please select your role between sender and receiver (hint: first start sender, then start receiver) ==> ";  
+    std::cout << "Please select your role between sender and receiver (hint: first start sender, then start receiver) ==> ";  
     std::getline(std::cin, party); // first the server, then the client
     PrintSplitLine('-'); 
 
     size_t ITEM_LEN = pp.oprf_part.RANGE_SIZE; // byte length of each item
     
     if(party == "sender"){
-        NetIO server_io("server", "", 8080);
+        int port;
+        std::cout << "Please input the port number for the server (e.g., 8080) ==> ";
+        std::cin >> port;
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+        NetIO server_io("server", "", port);
         std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>> result = mqRPMTPrivateID::Send(server_io, pp, input, ITEM_LEN);
         std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(result);
         std::vector<std::vector<uint8_t>> vec_X_id = std::get<1>(result);
+
+        /* std::sort(vec_union_id.begin(), vec_union_id.end());
+        std::sort(vec_X_id.begin(), vec_X_id.end()); */
+
         std::cout << "Sender's ID (union) >>>" << std::endl;
         for (int i = 0; i < vec_union_id.size(); ++i) 
             Block::PrintBlock(*(block*)&vec_union_id[i][0]);
@@ -154,10 +180,20 @@ int main(int argc, char** argv)
     }
     
     if(party == "receiver"){
-        NetIO client_io("client", "127.0.0.1", 8080);        
+        std::string address;
+        int port;
+        std::cout << "Please input the server's address and port number (e.g., 127.0.0.1 8080) ==> ";
+        std::cin >> address >> port;
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+        NetIO client_io("client", address, port);        
         std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>> result = mqRPMTPrivateID::Receive(client_io, pp, input, ITEM_LEN);
         std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(result);
         std::vector<std::vector<uint8_t>> vec_Y_id = std::get<1>(result);
+
+        /* std::sort(vec_union_id.begin(), vec_union_id.end());
+        std::sort(vec_Y_id.begin(), vec_Y_id.end()); */
+
         std::cout << "Receiver's ID (union) >>>" << std::endl;
         for (int i = 0; i < vec_union_id.size(); ++i) 
             Block::PrintBlock(*(block*)&vec_union_id[i][0]);
@@ -165,12 +201,6 @@ int main(int argc, char** argv)
         std::cout << "Receiver's ID (Y) >>>" << std::endl;
         for (int i = 0; i < vec_Y_id.size(); ++i)
             Block::PrintBlock(*(block*)&vec_Y_id[i][0]);
-        
-        /* for (int i = 0; i < vec_union_id.size(); ++i) {
-            for (int j = 0; j < vec_union_id[i].size(); ++j) {
-                std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)vec_union_id[i][j];
-            }
-        } */
     } 
 
     CRYPTO_Finalize();   
