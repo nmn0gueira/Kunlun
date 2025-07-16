@@ -1,8 +1,6 @@
 #include "mpc/pso/mqrpmt_private_id.hpp"
 #include "crypto/setup.hpp"
 
-enum class FileType { Bin, Csv, Unspecified };
-
 std::ifstream::pos_type filesize(std::ifstream& file)
 {
     auto pos = file.tellg();
@@ -10,12 +8,6 @@ std::ifstream::pos_type filesize(std::ifstream& file)
     auto size = file.tellg();
     file.seekg(pos, std::ios_base::beg);
     return size;
-}
-
-bool hasSuffix(std::string const& value, std::string const& ending)
-{
-    if (ending.size() > value.size()) return false;
-    return std::equal(ending.rbegin(), ending.rend(), value.rbegin());
 }
 
 bool isHexBlock(const std::string& buff)
@@ -85,17 +77,52 @@ void writeOutput(std::string outPath, const std::tuple<std::vector<std::vector<u
         throw std::runtime_error("failed to open the output file: " + outPath);
 
     std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(output);
-    std::vector<std::vector<uint8_t>> vec_party_id = std::get<0>(output);
+    std::vector<std::vector<uint8_t>> vec_party_id = std::get<1>(output);
 
     for (uint64_t i = 0; i < vec_party_id.size(); ++i)
     {
-        file << *(block*)&vec_union_id[i][0] << "," << *(block*)&vec_party_id[i][0] << std::endl;
+        uint64_t* data = (uint64_t*)&vec_union_id[i][0];
+        file.operator<<(std::hex);
+        std::operator<<(file, std::setw(16));
+        std::operator<<(file, std::setfill('0'));
+        file.operator<<(data[1]);
+        std::operator<<(file, std::setw(16));
+        std::operator<<(file, std::setfill('0'));
+        file.operator<<(data[0]);
+        file.operator<<(std::dec);
+        std::operator<<(file, std::setw(0));
+        
+        std::operator<<(file, ",");
+        
+        data = (uint64_t*)&vec_party_id[i][0];
+        file.operator<<(std::hex);
+        std::operator<<(file, std::setw(16));
+        std::operator<<(file, std::setfill('0'));
+        file.operator<<(data[1]);
+        std::operator<<(file, std::setw(16));
+        std::operator<<(file, std::setfill('0'));
+        file.operator<<(data[0]);
+        file.operator<<(std::dec);
+        std::operator<<(file, std::setw(0));
+        file.operator<<(std::endl);
     }
 
     // If the union set is larger than the party set which is very probable, we write the rest of the union set without the party set.
-    for (uint64_t i = vec_party_id.size(); i < vec_union_id.size(); ++i)
+     for (uint64_t i = vec_party_id.size(); i < vec_union_id.size(); ++i)
     {
-        file << *(block*)&vec_union_id[i][0] << "," << std::endl;
+        uint64_t* data = (uint64_t*)&vec_union_id[i][0];
+        file.operator<<(std::hex);
+        std::operator<<(file, std::setw(16));
+        std::operator<<(file, std::setfill('0'));
+        file.operator<<(data[1]);
+        std::operator<<(file, std::setw(16));
+        std::operator<<(file, std::setfill('0'));
+        file.operator<<(data[0]);
+        file.operator<<(std::dec);
+        std::operator<<(file, std::setw(0));
+        
+        std::operator<<(file, ",");
+        file.operator<<(std::endl);
     }
 }
 
@@ -110,6 +137,8 @@ int main(int argc, char** argv)
 
     CRYPTO_Initialize(); 
 
+    std::string inPath = argv[1];
+    std::string outPath = inPath + ".out";
     std::vector<block> input = readSet(argv[1]);
 
     std::cout << "Private-ID begins >>>" << std::endl; 
@@ -177,6 +206,8 @@ int main(int argc, char** argv)
         std::cout << "Sender's ID (X) >>>" << std::endl;
         for (int i = 0; i < vec_X_id.size(); ++i)
             Block::PrintBlock(*(block*)&vec_X_id[i][0]);
+
+        writeOutput(outPath, result);
     }
     
     if(party == "receiver"){
@@ -197,10 +228,12 @@ int main(int argc, char** argv)
         std::cout << "Receiver's ID (union) >>>" << std::endl;
         for (int i = 0; i < vec_union_id.size(); ++i) 
             Block::PrintBlock(*(block*)&vec_union_id[i][0]);
-        
+
         std::cout << "Receiver's ID (Y) >>>" << std::endl;
         for (int i = 0; i < vec_Y_id.size(); ++i)
             Block::PrintBlock(*(block*)&vec_Y_id[i][0]);
+
+        writeOutput(outPath, result);
     } 
 
     CRYPTO_Finalize();   
