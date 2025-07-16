@@ -41,8 +41,9 @@ block hexToBlock(const std::string& buff)
 }
 
 
-std::vector<block> readSet(const std::string& path) {
+std::vector<block> readSet(const std::string& path, size_t log_item_num) {
     std::vector<block> ret;
+    ret.reserve(1 << log_item_num);
     std::ifstream file(path, std::ios::in);
     if (file.is_open() == false)
         throw std::runtime_error("failed to open file: " + path);
@@ -60,11 +61,18 @@ std::vector<block> readSet(const std::string& path) {
             ret.push_back(Hash::StringToBlock(buffer));
         }
     }
+    size_t item_num = ret.size();
+    if (item_num < (1 << log_item_num))  // Determine if it is necessary to pad the set.
+    {
+        PRG::Seed seed = PRG::SetSeed(nullptr, 0);
+        std::vector<block> padding = PRG::GenRandomBlocks(seed, (1 << log_item_num) - item_num);
+        ret.insert(ret.end(), padding.begin(), padding.end());
+    }
+    else if (item_num > (1 << log_item_num))
+    {
+        throw std::runtime_error("The input set is larger than the expected size of 2^" + std::to_string(log_item_num));
+    }
     return ret;
-}
-
-void padInput(std::vector<block>& input, size_t ITEM_LEN)
-{
 }
 
 void writeOutput(std::string outPath, const std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>>& output)
@@ -139,8 +147,6 @@ int main(int argc, char** argv)
 
     std::string inPath = argv[1];
     std::string outPath = inPath + ".out";
-    std::vector<block> input = readSet(argv[1]);
-
     std::cout << "Private-ID begins >>>" << std::endl; 
 
     PrintSplitLine('-');  
@@ -191,6 +197,8 @@ int main(int argc, char** argv)
         std::cin >> port;
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
 
+        std::vector<block> input = readSet(argv[1], pp.LOG_SENDER_ITEM_NUM);
+
         NetIO server_io("server", "", port);
         std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>> result = mqRPMTPrivateID::Send(server_io, pp, input, ITEM_LEN);
         std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(result);
@@ -216,6 +224,8 @@ int main(int argc, char** argv)
         std::cout << "Please input the server's address and port number (e.g., 127.0.0.1 8080) ==> ";
         std::cin >> address >> port;
         std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+        std::vector<block> input = readSet(argv[1], pp.LOG_RECEIVER_ITEM_NUM);
 
         NetIO client_io("client", address, port);        
         std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>> result = mqRPMTPrivateID::Receive(client_io, pp, input, ITEM_LEN);
