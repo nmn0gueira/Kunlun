@@ -77,58 +77,39 @@ std::vector<block> readSet(const std::string& path, size_t log_item_num) {
 
 void writeOutput(std::string outPath, const std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>>& output)
 {
-    std::ofstream file;
-
-    file.open(outPath, std::ios::out | std::ios::trunc);
+    std::ofstream file(outPath, std::ios::out | std::ios::trunc);
 
     if (file.is_open() == false)
         throw std::runtime_error("failed to open the output file: " + outPath);
 
-    std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(output);
-    std::vector<std::vector<uint8_t>> vec_party_id = std::get<1>(output);
+    const auto& vec_union_id = std::get<0>(output);
+    const auto& vec_party_id = std::get<1>(output);
+
+    file.operator<<(std::hex);
+    std::operator<<(file, std::setfill('0'));
+
+    auto writeData = [](std::ofstream& file, const std::vector<uint8_t>& vec_id) {
+        uint64_t data[2];
+        std::memcpy(&data[0], &vec_id[0], sizeof(uint64_t));
+        std::memcpy(&data[1], &vec_id[8], sizeof(uint64_t));
+        std::operator<<(file, std::setw(16));
+        file.operator<<(data[1]);
+        std::operator<<(file, std::setw(16));
+        file.operator<<(data[0]);
+    };
 
     for (uint64_t i = 0; i < vec_party_id.size(); ++i)
     {
-        uint64_t* data = (uint64_t*)&vec_union_id[i][0];
-        file.operator<<(std::hex);
-        std::operator<<(file, std::setw(16));
-        std::operator<<(file, std::setfill('0'));
-        file.operator<<(data[1]);
-        std::operator<<(file, std::setw(16));
-        std::operator<<(file, std::setfill('0'));
-        file.operator<<(data[0]);
-        file.operator<<(std::dec);
-        std::operator<<(file, std::setw(0));
-        
+        writeData(file, vec_union_id[i]);
         std::operator<<(file, ",");
-        
-        data = (uint64_t*)&vec_party_id[i][0];
-        file.operator<<(std::hex);
-        std::operator<<(file, std::setw(16));
-        std::operator<<(file, std::setfill('0'));
-        file.operator<<(data[1]);
-        std::operator<<(file, std::setw(16));
-        std::operator<<(file, std::setfill('0'));
-        file.operator<<(data[0]);
-        file.operator<<(std::dec);
-        std::operator<<(file, std::setw(0));
+        writeData(file, vec_party_id[i]);
         file.operator<<(std::endl);
     }
 
-    // If the union set is larger than the party set which is very probable, we write the rest of the union set without the party set.
+    // If the union set is larger than the party set which is very probable, we write the rest of the union set without the party set (aka with a nan value as the party id)
      for (uint64_t i = vec_party_id.size(); i < vec_union_id.size(); ++i)
     {
-        uint64_t* data = (uint64_t*)&vec_union_id[i][0];
-        file.operator<<(std::hex);
-        std::operator<<(file, std::setw(16));
-        std::operator<<(file, std::setfill('0'));
-        file.operator<<(data[1]);
-        std::operator<<(file, std::setw(16));
-        std::operator<<(file, std::setfill('0'));
-        file.operator<<(data[0]);
-        file.operator<<(std::dec);
-        std::operator<<(file, std::setw(0));
-        
+        writeData(file, vec_union_id[i]);
         std::operator<<(file, ",");
         file.operator<<(std::endl);
     }
@@ -204,17 +185,6 @@ int main(int argc, char** argv)
         std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(result);
         std::vector<std::vector<uint8_t>> vec_X_id = std::get<1>(result);
 
-        /* std::sort(vec_union_id.begin(), vec_union_id.end());
-        std::sort(vec_X_id.begin(), vec_X_id.end()); */
-
-        std::cout << "Sender's ID (union) >>>" << std::endl;
-        for (int i = 0; i < vec_union_id.size(); ++i) 
-            Block::PrintBlock(*(block*)&vec_union_id[i][0]);
-
-        std::cout << "Sender's ID (X) >>>" << std::endl;
-        for (int i = 0; i < vec_X_id.size(); ++i)
-            Block::PrintBlock(*(block*)&vec_X_id[i][0]);
-
         writeOutput(outPath, result);
     }
     
@@ -231,17 +201,6 @@ int main(int argc, char** argv)
         std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>> result = mqRPMTPrivateID::Receive(client_io, pp, input, ITEM_LEN);
         std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(result);
         std::vector<std::vector<uint8_t>> vec_Y_id = std::get<1>(result);
-
-        /* std::sort(vec_union_id.begin(), vec_union_id.end());
-        std::sort(vec_Y_id.begin(), vec_Y_id.end()); */
-
-        std::cout << "Receiver's ID (union) >>>" << std::endl;
-        for (int i = 0; i < vec_union_id.size(); ++i) 
-            Block::PrintBlock(*(block*)&vec_union_id[i][0]);
-
-        std::cout << "Receiver's ID (Y) >>>" << std::endl;
-        for (int i = 0; i < vec_Y_id.size(); ++i)
-            Block::PrintBlock(*(block*)&vec_Y_id[i][0]);
 
         writeOutput(outPath, result);
     } 
