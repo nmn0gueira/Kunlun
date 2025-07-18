@@ -1,7 +1,5 @@
-# Specify the minimum version for CMake
 CMAKE_MINIMUM_REQUIRED(VERSION 3.2)
-
-# Project's name 
+ 
 PROJECT(Kunlun)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -10,29 +8,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED YES)
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -fpic -Wno-deprecated-declarations -Wno-unused-result -Xpreprocessor -O3")
 
 SET(CMAKE_CXX_LINK_EXECUTABLE "${CMAKE_CXX_LINK_EXECUTABLE} -ldl")
-set(OPENSSL_ROOT_DIR "" CACHE PATH "Path to the root of your custom OpenSSL installation")
 
-if(NOT OPENSSL_ROOT_DIR)
-    message(FATAL_ERROR "You must specify the custom OpenSSL installation directory using -DOPENSSL_ROOT_DIR=/path/to/openssl")
-endif()
+IF(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    SET(OPENSSL_LIBRARIES ${CMAKE_CURRENT_SOURCE_DIR}/openssl/lib64/libcrypto.a ${CMAKE_CURRENT_SOURCE_DIR}/openssl/lib64/libssl.a)
+    SET(OPENSSL_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/openssl/include)
+ELSEIF(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    SET(OPENSSL_LIBRARIES /usr/local/lib/libcrypto.a /usr/local/lib/libssl.a)
+    SET(OPENSSL_INCLUDE_DIR /usr/local/include)
+ENDIF()
 
-set(OPENSSL_USE_STATIC_LIBS TRUE CACHE BOOL "Use static OpenSSL libraries")
-find_package(OpenSSL REQUIRED)
-
-if(OpenSSL_FOUND)
-    message(STATUS "OpenSSL include directory: ${OPENSSL_INCLUDE_DIR}")
-    message(STATUS "OpenSSL libraries: ${OPENSSL_LIBRARIES}")
-    include_directories(${OPENSSL_INCLUDE_DIR})
-    #link_directories(${OPENSSL_LIBRARIES})
-else()
-    message(FATAL_ERROR "OpenSSL not found at the specified path!")
-endif()
+include_directories(${OPENSSL_INCLUDE_DIR})
 
 find_package(OpenMP REQUIRED)
 
 # find_package(absl REQUIRED)
 
-# let the preprocessor know about the system name
 if(CMAKE_SYSTEM_NAME  STREQUAL "Linux")
   SET(IS_LINUX 1)
 endif()
@@ -56,7 +46,6 @@ foreach(key
     OS_NAME
     OS_RELEASE
   )
-  # query the item ${key} and save its value in the variable _${key}
   cmake_host_system_information(RESULT _${key} QUERY ${key})
   cmake_print_variables(_${key})
 endforeach()

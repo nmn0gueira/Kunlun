@@ -12,3 +12,4 @@ Makefile
 deprecated
 build
 .vscode/
+openssl/
