@@ -20,7 +20,6 @@ set(OPENSSL_USE_STATIC_LIBS TRUE CACHE BOOL "Use static OpenSSL libraries")
 find_package(OpenSSL REQUIRED)
 
 if(OpenSSL_FOUND)
-    message(STATUS "Found OpenSSL: ${OPENSSL_VERSION}")
     message(STATUS "OpenSSL include directory: ${OPENSSL_INCLUDE_DIR}")
     message(STATUS "OpenSSL libraries: ${OPENSSL_LIBRARIES}")
     include_directories(${OPENSSL_INCLUDE_DIR})
@@ -46,8 +45,6 @@ endif()
 
 SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/build)
 
-configure_file(${PROJECT_SOURCE_DIR}/config/config.h.in ${PROJECT_SOURCE_DIR}/config/config.h @ONLY)
-
 include(CMakePrintHelpers)
 
 foreach(key
@@ -64,6 +61,7 @@ foreach(key
   cmake_print_variables(_${key})
 endforeach()
 
+configure_file(${PROJECT_SOURCE_DIR}/config/config.h.in ${PROJECT_SOURCE_DIR}/config/config.h @ONLY)
 
 # TARGET_LINK_LIBRARIES(absl::flat_hash_map)
 
