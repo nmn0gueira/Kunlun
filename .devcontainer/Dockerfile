@@ -9,5 +9,6 @@ RUN apt-get update && apt install -y \
 	git \
 	libomp-dev \
 	libssl-dev \
-	libtool \	
+	libtool \
+	python3 \
 	&& rm -rf /var/lib/apt/list/*
