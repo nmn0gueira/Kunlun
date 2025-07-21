@@ -118,16 +118,18 @@ void writeOutput(std::string outPath, const std::tuple<std::vector<std::vector<u
 
 int main(int argc, char** argv)
 {
-    if (argc != 2)
+    if (argc < 2 || argc > 3)
     {
-        std::cout << "Usage: " << argv[0] << " <set_file>" << std::endl;
+        std::cout << "Usage: " << argv[0] << " <input_path> [<output_path>]" << std::endl;
+        std::cout << "If output_path is not provided, it will be set to input_path + \".out\"" << std::endl;
         return 1;
     }
 
     CRYPTO_Initialize(); 
 
     std::string inPath = argv[1];
-    std::string outPath = inPath + ".out";
+    std::string outPath = argc == 3 ? argv[2] : inPath + ".out";
+
     std::cout << "Private-ID begins >>>" << std::endl; 
 
     PrintSplitLine('-');  
