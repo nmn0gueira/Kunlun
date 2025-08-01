@@ -116,94 +116,92 @@ void writeOutput(std::string outPath, const std::tuple<std::vector<std::vector<u
 }
 
 
+std::pair<std::string, std::string> parseHostPort(const std::string& input) {
+    size_t pos = input.rfind(':');
+    if (pos == std::string::npos || pos == input.size() - 1) {
+        throw std::invalid_argument("Input must contain a ':' separating host and port");
+    }
+    std::string host = input.substr(0, pos);
+    std::string port = input.substr(pos + 1);
+    return {host, port};
+}
+
+
 int main(int argc, char** argv)
 {
-    if (argc < 2 || argc > 3)
+    if (argc % 2 != 1)
     {
-        std::cout << "Usage: " << argv[0] << " <input_path> [<output_path>]" << std::endl;
-        std::cout << "If output_path is not provided, it will be set to input_path + \".out\"" << std::endl;
+        std::cerr << "Usage: " << argv[0]
+                  << " --in <input_path>"
+                  << " [--out <output_path>]"
+                  << " --address (0.0.0.0:port for server (sender) and <host>:port for client (receiver))"
+                  << " --log_sender <val> --log_receiver <val>"
+                  << " [--pp <filename>]"
+                  << std::endl;
+        return 1;
+    }
+
+    std::unordered_map<std::string, std::string> args;
+    for (int i = 1; i < argc - 1; i += 2)
+    {
+        args[argv[i]] = argv[i + 1];
+    }
+
+    std::string inPath = args["--in"];
+    std::string outPath = args.count("--out") ? args["--out"] : inPath + ".out";
+    std::string address = args["--address"];
+    size_t log_sender_item_num = std::stoul(args["--log_sender"]);
+    size_t log_receiver_item_num = std::stoul(args["--log_receiver"]);
+    std::string pp_filename = args["--pp"];
+
+    if (log_sender_item_num < 7 || log_receiver_item_num < 7)
+    {
+        std::cerr << "log_sender_item_num and log_receiver_item_num must be >= 7" << std::endl;
         return 1;
     }
 
     CRYPTO_Initialize(); 
 
-    std::string inPath = argv[1];
-    std::string outPath = argc == 3 ? argv[2] : inPath + ".out";
-
     std::cout << "Private-ID begins >>>" << std::endl; 
 
-    PrintSplitLine('-');  
-    std::cout << "Loading public parameters if they exist" << std::endl;
-
-    // generate pp (must be same for both server and client)
-    std::string pp_filename = "PrivateID.pp"; 
+    PrintSplitLine('-');
     mqRPMTPrivateID::PP pp;
-    std::cout << "Use file for public parameters if available? (y/n) ==> ";
-    std::string use_file_str;
-    std::getline(std::cin, use_file_str);
 
-    if(!FileExist(pp_filename) || use_file_str != "y"){
-        std::cout << pp_filename << " being created" << std::endl;
+    if(!FileExist(pp_filename)){
         size_t computational_security_parameter = 128;         
         size_t statistical_security_parameter = 40; 
-        size_t log_sender_item_num;
-        size_t log_receiver_item_num;
-        
-        std::cout << "Please input log_sender_item_num and log_receiver_item_num. Both must be >= 7 (e.g., 10 10) ==> ";
-        std::cin >> log_sender_item_num >> log_receiver_item_num;
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-        if(log_sender_item_num < 7 || log_receiver_item_num < 7){
-            std::cerr << "log_sender_item_num and log_receiver_item_num must be >= 7" << std::endl; 
-            exit(1); 
-        }
 
         size_t log_prf_input_len = std::max(log_receiver_item_num, log_sender_item_num); // set OPRF input length
         pp = mqRPMTPrivateID::Setup(log_prf_input_len, computational_security_parameter, statistical_security_parameter, 
                               log_sender_item_num, log_receiver_item_num); 
+        pp_filename = pp_filename == "" ? "PrivateID.pp" : pp_filename;
+        std::cout << "Saving public parameters to " << pp_filename << std::endl;
         mqRPMTPrivateID::SavePP(pp, pp_filename); 
     }
     else{
-        std::cout << pp_filename << " already exists" << std::endl;
+        std::cout << "Loading public parameters from " << pp_filename << std::endl;
         mqRPMTPrivateID::FetchPP(pp, pp_filename); 
     }
-
-    std::string party;
-    std::cout << "Please select your role between sender and receiver (hint: first start sender, then start receiver) ==> ";  
-    std::getline(std::cin, party); // first the server, then the client
-    PrintSplitLine('-'); 
-
-    size_t ITEM_LEN = pp.oprf_part.RANGE_SIZE; // byte length of each item
     
-    if(party == "sender"){
-        int port;
-        std::cout << "Please input the port number for the server (e.g., 8080) ==> ";
-        std::cin >> port;
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    PrintSplitLine('-');
+    size_t ITEM_LEN = pp.oprf_part.RANGE_SIZE; // byte length of each item
 
-        std::vector<block> input = readSet(argv[1], pp.LOG_SENDER_ITEM_NUM);
-
+    std::pair<std::string, std::string> host_port = parseHostPort(address);
+    std::string host = host_port.first;
+    int port = std::stoi(host_port.second);
+    
+    if(host == "0.0.0.0"){  // server side (sender)
+        std::vector<block> input = readSet(inPath, pp.LOG_SENDER_ITEM_NUM);
         NetIO server_io("server", "", port);
         std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>> result = mqRPMTPrivateID::Send(server_io, pp, input, ITEM_LEN);
-        std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(result);
-        std::vector<std::vector<uint8_t>> vec_X_id = std::get<1>(result);
-
         writeOutput(outPath, result);
     }
     
-    if(party == "receiver"){
-        std::string address;
-        int port;
-        std::cout << "Please input the server's address and port number (e.g., 127.0.0.1 8080) ==> ";
-        std::cin >> address >> port;
-        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    else {  // client side (receiver)
+        std::vector<block> input = readSet(inPath, pp.LOG_RECEIVER_ITEM_NUM);
 
-        std::vector<block> input = readSet(argv[1], pp.LOG_RECEIVER_ITEM_NUM);
-
-        NetIO client_io("client", address, port);        
+        NetIO client_io("client", host, port);        
         std::tuple<std::vector<std::vector<uint8_t>>, std::vector<std::vector<uint8_t>>> result = mqRPMTPrivateID::Receive(client_io, pp, input, ITEM_LEN);
-        std::vector<std::vector<uint8_t>> vec_union_id = std::get<0>(result);
-        std::vector<std::vector<uint8_t>> vec_Y_id = std::get<1>(result);
-
         writeOutput(outPath, result);
     } 
 
